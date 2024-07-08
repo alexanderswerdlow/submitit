@@ -344,7 +344,7 @@ class SlurmExecutor(core.PicklingExecutor):
 
     @property
     def _submitit_command_str(self) -> str:
-        return " ".join([self.python, "-u -m submitit.core._submit", shlex.quote(str(self.folder))])
+        return " ".join([self.python, *([] if "torchrun" in self.python else ["-u"]), "-m submitit.core._submit", shlex.quote(str(self.folder))]) + ("\'" if 'bash -c' in self.python else "")
 
     def _make_submission_file_text(self, command: str, uid: str) -> str:
         return _make_sbatch_string(command=command, folder=self.folder, **self.parameters)
@@ -508,8 +508,8 @@ def _make_sbatch_string(
         stderr_flags = [] if stderr_to_stdout else ["--error", stderr]
         if srun_args is None:
             srun_args = []
-        srun_cmd = _shlex_join(["srun", "--unbuffered", "--output", stdout, *stderr_flags, *srun_args])
-        command = " ".join((srun_cmd, command))
+        srun_cmd = _shlex_join(["srun", "--unbuffered", "--output", stdout, *stderr_flags])
+        command = " ".join((srun_cmd, *srun_args, command))
 
     lines += [
         "",
