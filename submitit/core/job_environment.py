@@ -192,11 +192,11 @@ class SignalHandler:
         return timed_out
 
     # pylint:disable=unused-argument
-    def bypass(self, signum: int, frame: tp.Optional[types.FrameType] = None) -> None:
+    def bypass(self, signum: int, frame: tp.Optional[types.FrameType] = None, **kwargs) -> None:
         self._logger.warning(f"Bypassing signal {signal.Signals(signum).name}")
 
     # pylint:disable=unused-argument
-    def checkpoint_and_try_requeue(self, signum: int, frame: tp.Optional[types.FrameType] = None) -> None:
+    def checkpoint_and_try_requeue(self, signum: int, frame: tp.Optional[types.FrameType] = None, exit_on_requeue=True) -> None:
         timed_out = self.has_timed_out()
         case = "timed-out" if timed_out else "preempted"
         self._logger.warning(
@@ -226,7 +226,11 @@ class SignalHandler:
             raise utils.UncompletedJobError(message)
         # if everything went well, requeue!
         self.env._requeue(countdown)
-        self._exit()
+        
+        if exit_on_requeue:
+            self._exit()
+        else:
+            self._logger.info("Not exiting after requeue. Returning to caller...")
 
     # pylint:disable=unused-argument
     def checkpoint_and_exit(self, signum: int, frame: tp.Optional[types.FrameType] = None) -> None:

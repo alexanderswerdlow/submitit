@@ -241,10 +241,17 @@ class SlurmExecutor(core.PicklingExecutor):
     job_class = SlurmJob
 
     def __init__(
-        self, folder: tp.Union[Path, str], max_num_timeout: int = 3, python: tp.Optional[str] = None
+        self, 
+        folder: tp.Union[Path, str], 
+        max_num_timeout: int = 3, 
+        python: tp.Optional[str] = None, 
+        python_suffix: tp.Optional[str] = None, 
+        additional_sbatch_lines: tp.Optional[tp.Iterable[str]] = None
     ) -> None:
         super().__init__(folder, max_num_timeout)
         self.python = shlex.quote(sys.executable) if python is None else python
+        self.python_suffix = python_suffix
+        self.additional_sbatch_lines = additional_sbatch_lines
         if not self.affinity() > 0:
             raise RuntimeError('Could not detect "srun", are you indeed on a slurm cluster?')
 
@@ -307,7 +314,7 @@ class SlurmExecutor(core.PicklingExecutor):
                 f"Unavailable parameter(s): {in_valid_parameters}\nValid parameters are:\n  - {string}"
             )
         # check that new parameters are correct
-        _make_sbatch_string(command="nothing to do", folder=self.folder, **kwargs)
+        _make_sbatch_string(command="nothing to do", folder=self.folder,  **kwargs)
         super()._internal_update_parameters(**kwargs)
 
     def _internal_process_submissions(
@@ -344,7 +351,10 @@ class SlurmExecutor(core.PicklingExecutor):
 
     @property
     def _submitit_command_str(self) -> str:
-        return " ".join([self.python, *([] if "torchrun" in self.python else ["-u"]), "-m submitit.core._submit", shlex.quote(str(self.folder))]) + ("\'" if 'bash -c' in self.python else "")
+        return " ".join([
+            self.python + "-m submitit.core._submit", 
+            shlex.quote(str(self.folder))
+        ]) + (f"{self.python_suffix}" if self.python_suffix else "")
 
     def _make_submission_file_text(self, command: str, uid: str) -> str:
         return _make_sbatch_string(command=command, folder=self.folder, **self.parameters)
@@ -421,6 +431,8 @@ def _make_sbatch_string(
     additional_parameters: tp.Optional[tp.Dict[str, tp.Any]] = None,
     srun_args: tp.Optional[tp.Iterable[str]] = None,
     use_srun: bool = True,
+    post_srun_commands: tp.Optional[tp.Iterable[str]] = None,
+    signal: tp.Optional[str] = None,
 ) -> str:
     """Creates the content of an sbatch file with provided parameters
 
@@ -464,10 +476,14 @@ def _make_sbatch_string(
         "stderr_to_stdout",
         "srun_args",
         "use_srun",  # if False, un python directly in sbatch instead of through srun
+        "post_srun_commands",
     ]
     parameters = {k: v for k, v in locals().items() if v is not None and k not in nonslurm}
+    if "signal" in parameters:
+        print(f"Using manually specified signal={parameters['signal']}")
+    else:
+        parameters["signal"] = f"{SlurmJobEnvironment.USR_SIG}@{signal_delay_s}"
     # rename and reformat parameters
-    parameters["signal"] = f"{SlurmJobEnvironment.USR_SIG}@{signal_delay_s}"
     if num_gpus is not None:
         warnings.warn(
             '"num_gpus" is deprecated, please use "gpus_per_node" instead (overwritting with num_gpus)'
@@ -485,9 +501,9 @@ def _make_sbatch_string(
         parameters["array"] = f"0-{map_count - 1}%{min(map_count, array_parallelism)}"
         stdout = stdout.replace("%j", "%A_%a")
         stderr = stderr.replace("%j", "%A_%a")
-    parameters["output"] = stdout.replace("%t", "0")
+    parameters["output"] = stdout.replace("%t", "%n")
     if not stderr_to_stdout:
-        parameters["error"] = stderr.replace("%t", "0")
+        parameters["error"] = stderr.replace("%t", "%n")
     parameters["open-mode"] = "append"
     if additional_parameters is not None:
         parameters.update(additional_parameters)
@@ -508,7 +524,7 @@ def _make_sbatch_string(
         stderr_flags = [] if stderr_to_stdout else ["--error", stderr]
         if srun_args is None:
             srun_args = []
-        srun_cmd = _shlex_join(["srun", "--unbuffered", "--output", stdout, *stderr_flags])
+        srun_cmd = _shlex_join(["srun", "--unbuffered", "--output", stdout, *stderr_flags,])
         command = " ".join((srun_cmd, *srun_args, command))
 
     lines += [
@@ -517,8 +533,11 @@ def _make_sbatch_string(
         "export SUBMITIT_EXECUTOR=slurm",
         # The input "command" is supposed to be a valid shell command
         command,
+        *(post_srun_commands if post_srun_commands is not None else []),
         "",
     ]
+
+    print("\n".join(lines))
     return "\n".join(lines)
 
 

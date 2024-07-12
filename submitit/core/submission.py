@@ -39,7 +39,7 @@ def process_job(folder: Union[Path, str]) -> None:
     logger = get_logger()
     logger.info(f"Starting with {env}")
     logger.info(f"Loading pickle: {paths.submitted_pickle}")
-    wait_time = 60
+    wait_time = 120
     for _ in range(wait_time):
         if paths.submitted_pickle.exists():
             break
@@ -56,9 +56,12 @@ def process_job(folder: Union[Path, str]) -> None:
         logger.info("Job completed successfully")
         del delayed  # if it blocks here, you have a race condition that must be solved!
         with utils.temporary_save_path(paths.result_pickle) as tmppath:  # save somewhere else, and move
-            utils.cloudpickle_dump(("success", result), tmppath)
-            del result
-            logger.info("Exiting after successful completion")
+            if tmppath is not None:
+                utils.cloudpickle_dump(("success", result), tmppath)
+                del result
+                logger.info("Exiting after successful completion")
+            else:
+                pass
     except Exception as error:  # TODO: check pickle methods for capturing traceback; pickling and raising
         try:
             with utils.temporary_save_path(paths.result_pickle) as tmppath:
@@ -72,5 +75,6 @@ def process_job(folder: Union[Path, str]) -> None:
 def submitit_main() -> None:
     parser = argparse.ArgumentParser(description="Run a job")
     parser.add_argument("folder", type=str, help="Folder where the jobs are stored (in subfolder)")
+    parser.add_argument("--dummy-arg", type=str, default="", help="Optional dummy string argument")
     args = parser.parse_args()
     process_job(args.folder)

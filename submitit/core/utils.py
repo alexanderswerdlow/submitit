@@ -75,11 +75,11 @@ class JobPaths:
 
     @property
     def stderr(self) -> Path:
-        return self._format_id(self.folder / "%j_%t_log.err")
+        return self._format_id(self.folder / "%j_%n_log.err")
 
     @property
     def stdout(self) -> Path:
-        return self._format_id(self.folder / "%j_%t_log.out")
+        return self._format_id(self.folder / "%j_%n_log.out")
 
     def _format_id(self, path: tp.Union[Path, str]) -> Path:
         """Replace id tag by actual id if available"""
@@ -175,14 +175,19 @@ def temporary_save_path(filepath: tp.Union[Path, str]) -> tp.Iterator[Path]:
     """
     filepath = Path(filepath)
     tmppath = filepath.with_suffix(filepath.suffix + ".save_tmp")
-    assert not tmppath.exists(), "A temporary saved file already exists."
-    yield tmppath
-    if not tmppath.exists():
-        raise FileNotFoundError("No file was saved at the temporary path.")
-    if filepath.exists():
-        os.remove(filepath)
-    os.rename(tmppath, filepath)
+    if tmppath.exists():
+        yield None
+    else:
+        yield tmppath
+        if filepath.exists():
+            os.remove(filepath)
+        if not tmppath.exists():
+            print("No file was saved at the temporary path.")
 
+        try:
+            os.rename(tmppath, filepath)
+        except Exception as e:
+            print(f"Error renaming temporary file {tmppath} to {filepath}")
 
 def archive_dev_folders(
     folders: tp.List[tp.Union[str, Path]], outfile: tp.Optional[tp.Union[str, Path]] = None
