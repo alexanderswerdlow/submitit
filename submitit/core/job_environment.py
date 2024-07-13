@@ -267,6 +267,9 @@ def _checkpoint(delayed: DelayedSubmission, filepath: Path, countdown: int) -> s
     if ckpt_delayed is None:
         return "checkpoint function returned None"
     ckpt_delayed.set_timeout(delayed._timeout_min, countdown)
-    with utils.temporary_save_path(filepath) as tmp:
-        ckpt_delayed.dump(tmp)
+    try:
+        with utils.temporary_save_path(filepath) as tmp:
+            ckpt_delayed.dump(tmp)
+    except Exception as e:
+        print(f"save pickle _checkpoint failed: {e}")
     return ""  # requeues
